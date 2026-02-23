@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<title>Dark Easter Web RPG</title>
+<style>
+  body { margin: 0; overflow: hidden; font-family: monospace; background:#0a0a0a; color:#ccc;}
+  #ui { position:absolute; top:10px; left:10px; z-index:10;}
+  #menu { position:absolute; width:100%; height:100%; background:#111; display:flex; justify-content:center; align-items:center; flex-direction:column;}
+  button,input { padding:10px; margin:5px; background:#333; color:#eee; border:none; font-family: monospace; cursor:pointer;}
+  canvas { display:block; }
+</style>
+</head>
+<body>
+
+<!-- MAIN MENU -->
+<div id="menu">
+  <h1>Dark Easter Web RPG</h1>
+  <div id="charSelect">
+    <label>Nytt namn: <input type="text" id="newCharName" placeholder="Skriv namn"></label>
+    <button id="createChar">Skapa Karaktär</button>
+  </div>
+  <div id="loadChar" style="margin-top:20px;">
+    <select id="charList"></select>
+    <button id="loadCharBtn">Ladda Karaktär</button>
+  </div>
+</div>
+
+<div id="ui" style="display:none;">
+  <div>Player: <span id="playerName">Player1</span></div>
+  <div>Weapon: <span id="playerWeapon">Pistol 1</span></div>
+  <div>Durability: <span id="weaponDur">100</span></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r152/three.min.js"></script>
+
+<script>
+// =========================
+// GLOBAL DATA
+// =========================
+let characters = JSON.parse(localStorage.getItem("characters") || "{}");
+let currentChar = null;
+
+// =========================
+// PISTOLS
+// =========================
+let pistols = [
+  {
+    name:"P92",
+    ammoType:"9mm",
+    magSize:15,
+    color:"black",
+    dmgClose:30,
+    dmgMedium:25,
+    dmgLong:20,
+    durability:100
+  },
+  {
+    name:"1911 Colt",
+    ammoType:".45",
+    magSize:7,
+    color:"silver",
+    dmgClose:35,
+    dmgMedium:28,
+    dmgLong:22,
+    durability:100
+  }
+];
+
+// Fyll på med 13 pistoler till som exempel
+for(let i=3;i<=15;i++){
+  pistols.push({
+    name:"Pistol "+i,
+    ammoType:"9mm",
+    magSize:15,
+    color:"black",
+    dmgClose:25,
+    dmgMedium:20,
+    dmgLong:15,
+    durability:100
+  });
+}
+
+// =========================
+// CHAR CREATE / LOAD
+// =========================
+const charList = document.getElementById("charList");
+function updateCharList(){
+  charList.innerHTML="";
+  for(let c in characters){
+    let opt = document.createElement("option");
+    opt.value=c; opt.textContent=c;
+    charList.appendChild(opt);
+  }
+}
+updateCharList();
+
+document.getElementById("createChar").addEventListener("click", ()=>{
+  let name = document.getElementById("newCharName").value.trim();
+  if(name==="") return alert("Skriv ett namn!");
+  if(characters[name]) return alert("Namnet finns redan!");
+  
+  characters[name] = {
+    name:name,
+    weapon:pistols[0].name,
+    durability:pistols[0].durability,
+    skills:[],
+    perks:[],
+    abilities:[],
+    clothingColor:"#00ff00",
+    position:{x:0,y:0,z:0}
+  };
+  localStorage.setItem("characters", JSON.stringify(characters));
+  updateCharList();
+  alert("Karaktär skapad! Välj i listan och tryck ladda.");
+});
+
+document.getElementById("loadCharBtn").addEventListener("click", ()=>{
+  let name = charList.value;
+  if(!name) return alert("Välj en karaktär!");
+  currentChar = characters[name];
+  startGame();
+});
+
+// =========================
+// GAME SETUP
+// =========================
+let scene,camera,renderer,player;
+
+function startGame(){
+  document.getElementById("menu").style.display="none";
+  document.getElementById("ui").style.display="block";
+
+  // Three.js setup
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0a0a0a);
+
+  camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight,0.1,1000);
+  renderer = new THREE.WebGLRenderer({antialias:true});
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  document.body.appendChild(renderer.domElement);
+
+  // Lights
+  let ambient = new THREE.AmbientLight(0x404040);
+  scene.add(ambient);
+  let dirLight = new THREE.DirectionalLight(0xffffff,0.5);
+  dirLight.position.set(5,10,7);
+  scene.add(dirLight);
+
+  // Floor + walls (Safe house)
+  let floorGeo = new THREE.BoxGeometry(10,0.1,10);
+  let floorMat = new THREE.MeshStandardMaterial({color:0x222222});
+  let floor = new THREE.Mesh(floorGeo,floorMat);
+  scene.add(floor);
+
+  let walls = new THREE.BoxGeometry(10,4,0.1);
+  let wallMat = new THREE.MeshStandardMaterial({color:0x333333});
+  let wall1 = new THREE.Mesh(walls, wallMat); wall1.position.set(0,2,-5); scene.add(wall1);
+  let wall2 = new THREE.Mesh(walls, wallMat); wall2.position.set(0,2,5); scene.add(wall2);
+  let wall3 = new THREE.Mesh(new THREE.BoxGeometry(0.1,4,10), wallMat); wall3.position.set(-5,2,0); scene.add(wall3);
+  let wall4 = new THREE.Mesh(new THREE.BoxGeometry(0.1,4,10), wallMat); wall4.position.set(5,2,0); scene.add(wall4);
+
+  // Player
+  player = new THREE.Object3D();
+  player.position.set(currentChar.position.x,currentChar.position.y,currentChar.position.z);
+  scene.add(player);
+  camera.position.set(0,1.5,0);
+  player.add(camera);
+
+  // Player model
+  let bodyGeo = new THREE.BoxGeometry(0.5,1,0.5);
+  let bodyMat = new THREE.MeshStandardMaterial({color:currentChar.clothingColor});
+  let body = new THREE.Mesh(bodyGeo, bodyMat);
+  body.position.set(0,0.5,0);
+  player.add(body);
+
+  // Movement
+  window.addEventListener('keydown', e=>{
+    if(e.code=='KeyW') move.forward=1;
+    if(e.code=='KeyS') move.backward=1;
+    if(e.code=='KeyA') move.left=1;
+    if(e.code=='KeyD') move.right=1;
+  });
+  window.addEventListener('keyup', e=>{
+    if(e.code=='KeyW') move.forward=0;
+    if(e.code=='KeyS') move.backward=0;
+    if(e.code=='KeyA') move.left=0;
+    if(e.code=='KeyD') move.right=0;
+  });
+
+  animate();
+}
+
+// =========================
+// MOVEMENT VARIABLES
+// =========================
+let move={forward:0,backward:0,left:0,right:0};
+let fps = 30;
+let then = Date.now();
+let interval = 1000/fps;
+
+// =========================
+// ANIMATION LOOP
+// =========================
+function animate(){
+  requestAnimationFrame(animate);
+  let now = Date.now();
+  let delta = now-then;
+  if(delta<interval) return;
+  then = now - (delta%interval);
+
+  if(player){
+    let speed = 0.05;
+    let dir = new THREE.Vector3();
+    if(move.forward) dir.z -= speed;
+    if(move.backward) dir.z += speed;
+    if(move.left) dir.x -= speed;
+    if(move.right) dir.x += speed;
+    player.position.add(dir);
+
+    // Update UI
+    document.getElementById("playerName").textContent=currentChar.name;
+    document.getElementById("playerWeapon").textContent=currentChar.weapon;
+    document.getElementById("weaponDur").textContent=currentChar.durability;
+  }
+
+  renderer.render(scene,camera);
+}
+
+// =========================
+// RESIZE HANDLER
+// =========================
+window.addEventListener('resize', ()=>{
+  if(camera && renderer){
+    camera.aspect = window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth,window.innerHeight);
+  }
+});
+</script>
+
+</body>
+</html>
